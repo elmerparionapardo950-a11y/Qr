@@ -1,0 +1,103 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Profesores · Asistencia QR</title><link rel="stylesheet" href="../assets/style.css"></head><body>
+<div id="top"></div>
+<main>
+  <h1>Registrar profesores y generar QR</h1>
+  <div id="m" class="msg"></div>
+  <form id="f" class="card grid">
+    <div><label>DNI</label><input id="dni" pattern="[0-9]{8}" maxlength="8" required></div>
+    <div><label>Nombres</label><input id="nombres" required></div>
+    <div><label>Apellidos</label><input id="apellidos" required></div>
+    <div><label>Correo</label><input id="email" type="email"></div>
+    <div><label>Teléfono</label><input id="telefono"></div>
+    <div><label>Turno</label><select id="turno"></select></div>
+    <div><button class="btn">Registrar profesor</button></div>
+  </form>
+  <div class="card scroll"><table>
+    <thead><tr><th>DNI</th><th>Profesor</th><th>Turno</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table></div>
+</main>
+
+<dialog id="dlg">
+  <h2 id="qn" style="margin-top:0"></h2>
+  <canvas id="cv" width="300" height="360"></canvas>
+  <div style="margin-top:12px;display:flex;gap:8px;justify-content:center">
+    <a id="dl" class="btn" download="qr.png">Descargar PNG</a>
+    <button class="btn sec" onclick="window.print()">Imprimir</button>
+    <button class="btn sec" onclick="$('dlg').close()">Cerrar</button>
+  </div>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="../js/config.js"></script><script src="../js/common.js"></script>
+<script>
+let turnos = [], profs = [];
+const msg = $('m');
+
+async function cargar() {
+  const t = await db.from('turnos').select('*').order('id');
+  const p = await db.from('profesores').select('*,turnos(nombre)').order('apellidos');
+  if (t.error || p.error) return aviso(msg, 'err', (t.error || p.error).message);
+  turnos = t.data; profs = p.data;
+  $('turno').innerHTML = turnos.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('');
+  $('tb').innerHTML = profs.map(p => `<tr>
+    <td>${esc(p.dni)}</td><td>${esc(p.apellidos + ', ' + p.nombres)}</td>
+    <td><select data-a="turno" data-id="${p.id}">${turnos.map(x => `<option value="${x.id}" ${x.id === p.turno_id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></td>
+    <td><span class="tag ${p.activo ? 'puntual' : 'off'}">${p.activo ? 'Activo' : 'Inactivo'}</span></td>
+    <td style="white-space:nowrap">
+      <button class="btn sm" data-a="qr" data-id="${p.id}">Ver QR</button>
+      <button class="btn sm sec" data-a="estado" data-id="${p.id}">${p.activo ? 'Desactivar' : 'Activar'}</button>
+      <button class="btn sm sec" data-a="regenerar" data-id="${p.id}">Regenerar QR</button>
+    </td></tr>`).join('') || '<tr><td colspan="5">Registra al primer profesor con el formulario de arriba.</td></tr>';
+}
+
+async function actualizar(id, cambios, okTxt) {
+  const {error} = await db.from('profesores').update(cambios).eq('id', id);
+  if (error) aviso(msg, 'err', error.message); else aviso(msg, 'ok', okTxt);
+  await cargar();
+}
+
+function verQR(token, nombre) {
+  const tmp = document.createElement('div');
+  new QRCode(tmp, {text: token, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M});
+  setTimeout(() => {
+    const c = $('cv'), x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, 300, 360);
+    x.drawImage(tmp.querySelector('canvas'), 20, 20, 260, 260);
+    x.fillStyle = '#17261f'; x.font = 'bold 18px sans-serif'; x.textAlign = 'center';
+    x.fillText(nombre.length > 30 ? nombre.slice(0, 29) + '…' : nombre, 150, 315);
+    $('qn').textContent = nombre;
+    $('dl').href = c.toDataURL('image/png');
+    $('dl').download = 'QR-' + nombre.replace(/[^\wÁ-ú]+/g, '_') + '.png';
+    $('dlg').showModal();
+  }, 50);
+}
+
+$('tb').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const p = profs.find(x => x.id === b.dataset.id);
+  if (b.dataset.a === 'qr') verQR(p.qr_token, p.apellidos + ', ' + p.nombres);
+  if (b.dataset.a === 'estado') actualizar(p.id, {activo: !p.activo}, 'Estado actualizado.');
+  if (b.dataset.a === 'regenerar' && confirm('El QR actual dejará de funcionar. ¿Continuar?'))
+    actualizar(p.id, {qr_token: tokenNuevo()}, 'QR regenerado. El anterior ya no funciona.');
+});
+$('tb').addEventListener('change', e => {
+  if (e.target.dataset.a === 'turno') actualizar(e.target.dataset.id, {turno_id: +e.target.value}, 'Turno actualizado.');
+});
+
+$('f').onsubmit = async e => {
+  e.preventDefault();
+  const {data, error} = await db.from('profesores').insert({
+    dni: $('dni').value.trim(), nombres: $('nombres').value.trim(), apellidos: $('apellidos').value.trim(),
+    email: $('email').value.trim() || null, telefono: $('telefono').value.trim() || null,
+    turno_id: +$('turno').value, qr_token: tokenNuevo()
+  }).select().single();
+  if (error) return aviso(msg, 'err', error.code === '23505' ? 'Ya existe un profesor con ese DNI.' : error.message);
+  aviso(msg, 'ok', 'Profesor guardado en Supabase. Aquí tienes su QR.'); e.target.reset(); await cargar();
+  verQR(data.qr_token, data.apellidos + ', ' + data.nombres);
+};
+
+(async () => { await requireAdmin(); renderTop('prof'); await cargar(); })();
+</script></body></html>

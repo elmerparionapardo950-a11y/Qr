@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Ingresar · Asistencia QR</title>
+<link rel="stylesheet" href="../assets/style.css"></head><body>
+<div class="center"><form id="f" class="card login">
+  <h1>Panel de administración</h1>
+  <div id="m" class="msg"></div>
+  <label for="u">Correo</label><input id="u" type="email" required autofocus>
+  <label for="c">Contraseña</label><input id="c" type="password" required>
+  <button class="btn" style="width:100%">Ingresar</button>
+</form></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../js/config.js"></script><script src="../js/common.js"></script>
+<script>
+db.auth.getSession().then(({data}) => { if (data.session) location.href = 'index.html'; });
+$('f').onsubmit = async e => {
+  e.preventDefault();
+  const {error} = await db.auth.signInWithPassword({email: $('u').value.trim(), password: $('c').value});
+  if (error) return aviso($('m'), 'err', 'Correo o contraseña incorrectos.');
+  location.href = 'index.html';
+};
+</script></body></html>

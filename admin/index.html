@@ -1,0 +1,45 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hoy · Asistencia QR</title><link rel="stylesheet" href="../assets/style.css"></head><body>
+<div id="top"></div>
+<main>
+  <h1 id="titulo">Asistencia de hoy</h1>
+  <div id="m" class="msg"></div>
+  <div class="stats">
+    <div class="stat"><b id="s1">–</b><span>Profesores activos</span></div>
+    <div class="stat ok"><b id="s2">–</b><span>Han marcado</span></div>
+    <div class="stat late"><b id="s3">–</b><span>Tardanzas</span></div>
+    <div class="stat abs"><b id="s4">–</b><span>Sin marcar</span></div>
+  </div>
+  <div class="card scroll"><table>
+    <thead><tr><th>Profesor</th><th>Turno</th><th>Ingreso</th><th>Salida</th><th>Estado</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table></div>
+  <div class="card hide" id="aus"><strong>Sin marcar:</strong> <span id="aust"></span></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../js/config.js"></script><script src="../js/common.js"></script>
+<script>
+(async () => {
+  await requireAdmin(); renderTop('inicio');
+  const hoy = hoyLima();
+  $('titulo').textContent = 'Asistencia de hoy · ' + fmtFecha(hoy);
+  try {
+    const {data: profs, error} = await db.from('profesores').select('id,nombres,apellidos,turnos(nombre)').eq('activo', true);
+    if (error) throw error;
+    const asis = await buscarAsistencias({desde: hoy, hasta: hoy});
+    const presentes = new Set(asis.map(a => a.profesor_id));
+    const ausentes = profs.filter(p => !presentes.has(p.id));
+    $('s1').textContent = profs.length;
+    $('s2').textContent = asis.length;
+    $('s3').textContent = asis.filter(a => a.estado === 'tardanza').length;
+    $('s4').textContent = ausentes.length;
+    $('tb').innerHTML = asis.map(a => `<tr><td>${esc(a.profesores.apellidos + ', ' + a.profesores.nombres)}</td>
+      <td>${esc(a.turnos.nombre)}</td><td>${horaLima(a.hora_ingreso)}</td><td>${horaLima(a.hora_salida)}</td><td>${tagEstado(a)}</td></tr>`).join('')
+      || '<tr><td colspan="5">Aún no hay marcaciones hoy.</td></tr>';
+    if (ausentes.length) {
+      $('aus').classList.remove('hide');
+      $('aust').textContent = ausentes.map(p => `${p.apellidos} ${p.nombres} (${p.turnos?.nombre ?? 'sin turno'})`).join(' · ');
+    }
+  } catch (e) { aviso($('m'), 'err', e.message); }
+})();
+</script></body></html>

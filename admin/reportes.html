@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reportes · Asistencia QR</title><link rel="stylesheet" href="../assets/style.css"></head><body>
+<div id="top"></div>
+<main>
+  <h1>Reportes de asistencia</h1>
+  <div id="m" class="msg"></div>
+  <form id="f" class="card grid">
+    <div><label>Desde</label><input type="date" id="desde"></div>
+    <div><label>Hasta</label><input type="date" id="hasta"></div>
+    <div><label>Turno</label><select id="turno"><option value="">Todos</option></select></div>
+    <div><label>Profesor</label><select id="profesor"><option value="">Todos</option></select></div>
+    <div><label>Estado</label><select id="estado"><option value="">Todos</option><option value="puntual">Puntual</option><option value="tardanza">Tardanza</option></select></div>
+    <div style="display:flex;gap:6px"><button class="btn">Filtrar</button>
+      <button type="button" class="btn sec" id="csv">Excel (CSV)</button>
+      <button type="button" class="btn sec" onclick="window.print()">Imprimir</button></div>
+  </form>
+  <p><strong id="n">0</strong> registros · <strong id="nt">0</strong> tardanzas</p>
+  <div class="card scroll"><table>
+    <thead><tr><th>Fecha</th><th>DNI</th><th>Profesor</th><th>Turno</th><th>Ingreso</th><th>Salida</th><th>Estado</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../js/config.js"></script><script src="../js/common.js"></script>
+<script>
+let rows = [];
+const filtros = () => ({desde: $('desde').value, hasta: $('hasta').value, turno: $('turno').value, profesor: $('profesor').value, estado: $('estado').value});
+
+async function buscar() {
+  try {
+    rows = await buscarAsistencias(filtros());
+    $('n').textContent = rows.length;
+    $('nt').textContent = rows.filter(r => r.estado === 'tardanza').length;
+    $('tb').innerHTML = rows.map(r => `<tr><td>${fmtFecha(r.fecha)}</td><td>${esc(r.profesores.dni)}</td>
+      <td>${esc(r.profesores.apellidos + ', ' + r.profesores.nombres)}</td><td>${esc(r.turnos.nombre)}</td>
+      <td>${horaLima(r.hora_ingreso)}</td><td>${horaLima(r.hora_salida)}</td><td>${tagEstado(r)}</td></tr>`).join('')
+      || '<tr><td colspan="7">No hay registros con estos filtros.</td></tr>';
+  } catch (e) { aviso($('m'), 'err', e.message); }
+}
+
+$('f').onsubmit = e => { e.preventDefault(); buscar(); };
+
+$('csv').onclick = () => {
+  const cel = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lineas = [['Fecha', 'DNI', 'Apellidos', 'Nombres', 'Turno', 'Ingreso', 'Salida', 'Estado', 'Minutos tarde']]
+    .concat(rows.map(r => [r.fecha, r.profesores.dni, r.profesores.apellidos, r.profesores.nombres, r.turnos.nombre,
+      horaLima(r.hora_ingreso), horaLima(r.hora_salida), r.estado, r.minutos_tarde]));
+  const blob = new Blob(['\uFEFF' + lineas.map(l => l.map(cel).join(';')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'asistencia_' + hoyLima() + '.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+(async () => {
+  await requireAdmin(); renderTop('rep');
+  const hoy = hoyLima();
+  $('desde').value = hoy.slice(0, 8) + '01'; $('hasta').value = hoy;
+  const t = await db.from('turnos').select('*').order('id');
+  const p = await db.from('profesores').select('id,nombres,apellidos').order('apellidos');
+  (t.data || []).forEach(x => $('turno').add(new Option(x.nombre, x.id)));
+  (p.data || []).forEach(x => $('profesor').add(new Option(x.apellidos + ', ' + x.nombres, x.id)));
+  buscar();
+})();
+</script></body></html>

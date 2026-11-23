@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Escáner de asistencia</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  body{background:var(--ink);color:#fff}
+  .wrap{max-width:520px;margin:0 auto;padding:16px;text-align:center}
+  h1{margin:8px 0 2px}
+  #reloj{font-size:2.6rem;font-weight:700;font-variant-numeric:tabular-nums}
+  #fecha{color:#cfe0d7;margin-bottom:12px}
+  #lector{background:#000;border-radius:12px;overflow:hidden;min-height:260px}
+  #res{margin-top:14px;padding:16px;border-radius:12px;font-size:1.1rem;display:none}
+  #res b{display:block;font-size:1.5rem}
+  #res.ok{background:#1f6f5c}#res.late{background:#b45309}#res.info{background:#3b5b8c}#res.err{background:#b3261e}
+  .hint{color:#cfe0d7;font-size:.9rem;margin-top:12px}
+</style></head><body>
+<div class="wrap">
+  <h1>Marca tu asistencia</h1>
+  <div id="reloj">--:--:--</div><div id="fecha"></div>
+  <div id="lector"></div>
+  <div id="res" role="status" aria-live="polite"></div>
+  <p class="hint">Muestra tu código QR frente a la cámara. El primer escaneo del día marca ingreso; el siguiente, salida.</p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script>
+const res = $('res');
+let ocupado = false;
+
+setInterval(() => {
+  const d = new Date();
+  $('reloj').textContent = d.toLocaleTimeString('es-PE', {hour12: false, timeZone: TZ});
+  $('fecha').textContent = d.toLocaleDateString('es-PE', {weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ});
+}, 1000);
+
+function mostrar(cls, titulo, detalle) {
+  res.className = cls; res.style.display = 'block';
+  res.innerHTML = '<b></b><span></span>';
+  res.querySelector('b').textContent = titulo; res.querySelector('span').textContent = detalle;
+}
+
+async function procesar(texto) {
+  if (ocupado) return;
+  ocupado = true;
+  try {
+    const {data: d, error} = await db.rpc('registrar_asistencia', {p_token: String(texto).trim()});
+    if (error) throw error;
+    if (!d.ok) mostrar('err', 'No se pudo registrar', d.mensaje);
+    else {
+      const cls = d.estado === 'tardanza' ? 'late' : d.estado === 'aviso' ? 'info' : 'ok';
+      mostrar(cls, d.profesor, d.mensaje + (d.hora ? ' · ' + d.hora : ''));
+    }
+    if (navigator.vibrate) navigator.vibrate(d.ok ? 150 : [100, 60, 100]);
+  } catch (e) { mostrar('err', 'Sin conexión', 'Revisa tu internet e intenta de nuevo.'); }
+  setTimeout(() => { ocupado = false; res.style.display = 'none'; }, 3500);
+}
+
+const lector = new Html5Qrcode('lector');
+lector.start({facingMode: 'environment'}, {fps: 10, qrbox: {width: 240, height: 240}}, procesar)
+  .catch(() => mostrar('err', 'No se pudo abrir la cámara', 'Permite el acceso a la cámara. En celular se requiere HTTPS.'));
+</script></body></html>
